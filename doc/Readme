@@ -1,0 +1,9 @@
+A flexible python tool to create and launch jobs on the cluster and to load the results back into python.
+
+Provides the SimulationJob object
+
+arguments: 
+arrayargs	 a dict of parname:[parvalues] of array parameters 
+constargs	 a dict of parname:parvalue of constant parameters for all simulations run by the job.
+
+load_data: returns an xarray Data Set with the arrayargs as coordinates (+ specified innner dimension names)	and the constargs as attributes
