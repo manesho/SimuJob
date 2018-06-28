@@ -3,32 +3,37 @@ SimuJob Module
 
 A tool to create and launch Matrix/array jobs and retrieve data on a SGE cluster.
 
+in order for the data retrieval to work properly, it is assumed that 
+the main executable takes a named argument that can be specified with 
+the global variable fileargname, that contains a path to a file
+and stores the data reuslts in that file 
 """
 
 import itertools as it
 import os
 import paramiko
 import xarray as xr
-
+import numpy as np
+from pandas import MultiIndex
 # System dependent default settings
 validclusternames = ['itpwilson', 'neumann']
 defaultusername = 'hornung'
 defaultclustername = 'itpwilson'
 defaultdependencies = ['/scratch1/hornung/soworm/worm.so',
-				'/home/hornung/projects/sowoworm/pytools/simulator.py',
-				'/home/hornung/projects/soworm/pytools/wormwrap.py',
-				'/home/hornung/projects/soworm/pytools/run.py']
+				'/home/hornung/projects/soworm/pytools/simulator.py',
+				'/home/hornung/projects/soworm/pytools/wormwrap.py']
 
-# Templates
+# Templates - simulation program dependent 
+fileargname = "rfname"
 launchfiletemplate = """#!/bin/bash
 #$-S /bin/sh
 #$-cwd
 #$-j yes
 #$-t 1-{nmax}
 {argdefstring}
-python simulator.py {argstring} -resultfile
+python simulator.py {argstring} 
 """
-
+innderdims = ('i', 'observable_index')
 
 class Cluster(object):
 		"""	
@@ -94,6 +99,8 @@ class MatrixJob(object):
 
 		Attributes:
 			jobscriptname (str): The full path to the jobscript (submitted via qsub)
+
+			resultfilenames(list): a list of strings containing the file names of all simulation results								
 			
 		"""
 		def __init__(self, 
@@ -109,14 +116,26 @@ class MatrixJob(object):
 			self.name = name
 			self.arrayargs = arrayargs
 			self.constargs = constargs
+			self.dependencies = dependencies
 
 			# create flat lists over all combinations of arrayargs:
-			flatlists = zip(*it.product(*self.arrayargs.values()))
+			flatlists = list(zip(*it.product(*self.arrayargs.values())))
+			self.ta=flatlists
 			#recombine the lists with their name to a dictionary
 			self.arrayargsflat = { parname:parvalues for parname, parvalues
 														in zip(arrayargs.keys(), flatlists) } 
+			# to create the resultfilenamelist: tranpose the flat arrayargs dict:
+			self.arrayargsflattr = [dict(zip(self.arrayargsflat.keys(), partuple))
+										for partuple in zip(*self.arrayargsflat.values())]
+			# concatenate to filenames and sort alphabetically to be reproducible
+			rfnames = ['"results/'+'-'.join(
+								[parname+'-'+str(parvalue)
+										for parname, parvalue in sorted(pardict.items())]
+														)	+ '.dat"' 
+																	for pardict in self.arrayargsflattr]
+
 			self.jobscriptname = self.folder + self.name + '.sh'
-		
+			self.arrayargsflat[fileargname]=rfnames		
 			return
 				
 			
@@ -132,8 +151,10 @@ class MatrixJob(object):
 			for f in [self.folder, self.folder+"err/", self.folder+"out/", self.folder+"results/"]:
 				os.makedirs(f, exist_ok = True)
 	
-			for dep in dependencies:
+			for dep in self.dependencies:
 				os.system("cp "+dep+" "+self.folder)
+
+			self.create_launch_file()
 			
 			return
 
@@ -164,6 +185,7 @@ class MatrixJob(object):
 									argdefstring =  argdefstring,
 									argstring = constargstring + arrayargstring
 										)
+			print(launchfilecontent)
 			with open(self.jobscriptname, "w") as f:
 					f.write(launchfilecontent)
 					f.close()
@@ -179,6 +201,18 @@ class MatrixJob(object):
 					data, an xarray.dataset containing one dataarray with coordinates specified by
 					arrayargs and attributes specified by  constargs
 			"""
-			return
+			data = [np.loadtxt(self.folder+fname.strip('"')) for fname in self.arrayargsflat['rfname'] ]
+			datalist = np.array(data)
+			xrdata = xr.DataArray(np.array(data), dims=('pars', *innerdims))
+			#create a multiindex coordinate for the pars dimension:
+
+			parvaluesarray = [value for key, value in sorted(self.arrayargsflat.items())]
+			names = ([key for key in sorted(self.arrayargsflat.keys())])
+			#remove the rfname as name and value
+			parvaluesarray.pop(names.index('rfname'))
+			names.remove('rfname')
+			mi = MultiIndex.from_arrays(parvaluesarray, names=names)
+			xrdata.coords['pars']=mi
+			return xrdata.unstack('pars')
 
 
