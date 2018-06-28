@@ -1,21 +1,34 @@
 """
 SimuJob Module
 
-A flexible tool to create and launch jobs and retrieve data on a SGE cluster.
-
-provides the SimulationJob class.
+A tool to create and launch Matrix/array jobs and retrieve data on a SGE cluster.
 
 """
 
-
-# System dependent default settings
-validclusternames = ['itpwilson', 'neumann']
-defaultuser = 'hornung'
-defaultclustername = 'itpwilson'
-
+import itertools as it
 import os
 import paramiko
 import xarray as xr
+
+# System dependent default settings
+validclusternames = ['itpwilson', 'neumann']
+defaultusername = 'hornung'
+defaultclustername = 'itpwilson'
+defaultdependencies = ['/scratch1/hornung/soworm/worm.so',
+				'/home/hornung/projects/sowoworm/pytools/simulator.py',
+				'/home/hornung/projects/soworm/pytools/wormwrap.py',
+				'/home/hornung/projects/soworm/pytools/run.py']
+
+# Templates
+launchfiletemplate = """#!/bin/bash
+#$-S /bin/sh
+#$-cwd
+#$-j yes
+#$-t 1-{nmax}
+{argdefstring}
+python simulator.py {argstring} -resultfile
+"""
+
 
 class Cluster(object):
 		"""	
@@ -77,8 +90,10 @@ class MatrixJob(object):
 
 			workingcluster (Cluster):  A cluster object, to manage communication with the cluster 
 
+			dependencies (list): A list of full paths to all files required by the simulation job
+
 		Attributes:
-			jobfilename
+			jobscriptname (str): The full path to the jobscript (submitted via qsub)
 			
 		"""
 		def __init__(self, 
@@ -87,26 +102,83 @@ class MatrixJob(object):
 						arrayargs={},
 						constargs={},
 						workingcluster=Cluster(),
-						)
+						dependencies = defaultdependencies):
+			
+			self.workingcluster = workingcluster
+			self.folder = folder
+			self.name = name
+			self.arrayargs = arrayargs
+			self.constargs = constargs
+
+			# create flat lists over all combinations of arrayargs:
+			flatlists = zip(*it.product(*self.arrayargs.values()))
+			#recombine the lists with their name to a dictionary
+			self.arrayargsflat = { parname:parvalues for parname, parvalues
+														in zip(arrayargs.keys(), flatlists) } 
+			self.jobscriptname = self.folder + self.name + '.sh'
+		
+			return
 				
 			
 		def run(self):
 			""" Launches the job via ssh """
+			self.workingcluster.submit(self.jobscriptname)
 			return
 
 		def create_all_files(self):
 			""" Creates the jobfile, jobdirectory and subdirectories if necessary and copys all other
 				files, that a job debends on.
 			"""
+			for f in [self.folder, self.folder+"err/", self.folder+"out/", self.folder+"results/"]:
+				os.makedirs(f, exist_ok = True)
+	
+			for dep in dependencies:
+				os.system("cp "+dep+" "+self.folder)
+			
 			return
+
+		def create_launch_file(self):
+			""" Creates the launch file to be submitted to SGE
+				uses the global string launchfiletemplate as a basis
+			"""
+			# create a string of the form
+			#"""
+			# arg1 = (0 a1v1 a1v2 a1v3 )
+			# arg2 = (0 a2v1 a2v2)
+			# ...
+			# """
+			# out of the arrayargsflat dict {'arg1':[a1v1,a1v2, a1v3], 'arg2':[a2v1,a2v2], ...}
+			argdefstring = "\n".join(
+						[("{}=(0 "+ ("{} "*len(parvalues)) +")").format(parname,*parvalues)  
+									for parname,parvalues in self.arrayargsflat.items()])
+			
+			# create the string
+			#  -arg1 ${arg1[${SGE_TASK_ID}] }
+			arrayargstring = " ".join([" -{} ${{{}[${{SGE_TASK_ID}}]}}".format(key, key)
+							  							for key in self.arrayargsflat.keys()])
+			constargstring = " ".join( ["-{} {} ".format(name,value) 
+													for name, value in self.constargs.items() ])
+
+			launchfilecontent = launchfiletemplate.format(
+									nmax = len(next(iter(self.arrayargsflat.values()))),
+									argdefstring =  argdefstring,
+									argstring = constargstring + arrayargstring
+										)
+			with open(self.jobscriptname, "w") as f:
+					f.write(launchfilecontent)
+					f.close()
+			return 
+
+	
 
 		def retrieve_data(self):
 			""" returns the result of the job, combined into a xarray
 
 			
 				Returns:
-					data, a xarray.dataset containing one dataarray with coordinates specified by
+					data, an xarray.dataset containing one dataarray with coordinates specified by
 					arrayargs and attributes specified by  constargs
 			"""
 			return
+
 
