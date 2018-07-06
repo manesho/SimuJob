@@ -225,7 +225,6 @@ class MatrixJob(object):
 									argdefstring =  argdefstring,
 									argstring = constargstring + arrayargstring
 										)
-			print(launchfilecontent)
 			with open(self.jobscriptname, "w") as f:
 					f.write(launchfilecontent)
 					f.close()

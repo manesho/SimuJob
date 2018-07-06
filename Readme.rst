@@ -8,13 +8,13 @@ It was developed to be used from within a Jupyter notebook.
 
 What it can do:
 
-    - Create a launchfile (to be submitted to SGE via qsub) for an arrayjob that will run
-      over all combinations of the specified arguments.
+- Create a launchfile (to be submitted to SGE via qsub) for an arrayjob that will run
+  over all combinations of the specified arguments.
 
-    - Run the job via SSH.
-    
-    - Retrieve the resulting data to an Xarray n-dimensional Data Array with one dimension for 
-      each specified array-argument (+ inner dimension depending on what you use it for).
+- Run the job via SSH.
+
+- Retrieve the resulting data to an Xarray n-dimensional Data Array with one dimension for 
+  each specified array-argument (+ inner dimension depending on what you use it for).
 
 
 Installation
@@ -31,7 +31,7 @@ Requirements
 ============
 To use SimuJob as it is, you need:
     
-    - A SGE cluster 
-    - A directory mounted on the cluster and on the machine wher SimuJob runs
+- A SGE cluster 
+- A directory mounted on the cluster and on the machine wher SimuJob runs
 
 
