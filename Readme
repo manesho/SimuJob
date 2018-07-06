@@ -1,0 +1,3 @@
+# SimuJob
+
+A small tool to facilitate trivial parallelization on a Sun Grid Engine (or similar) cluster.
