@@ -3,7 +3,7 @@ SimuJob
 ============
 
 A small tool to facilitate trivial parallelization on a Sun Grid Engine (or similar) cluster.
-Explicitly: starting the same program several times with different parameters.
+Explicitly: starting the same program several times with (possibliy) different parameters.
 It was developed to be used from within a Jupyter notebook.
 
 What it can do:
