@@ -30,7 +30,9 @@ note the additional argument rfname, that has not been specified. In order for t
 the retrieve data method to work properly, it is assumed that each of your simulations instances stores
 its results to a file whose name can be specified with an argument.
 The name of that argument can be specified in the variable fileargname.
-
+This file can either be a plain csv file (one that can be read by numpy.loadtxt) or a netcdf file.
+In the case of csv files, the inner dimension neames need to be specified by the variable innerdims.
+For more complicated output data, with an arbitrary number of dimensions, use netcdf files.
 
 
 """
@@ -240,13 +242,17 @@ class MatrixJob(object):
 					data (DataArray): 	an xarray.DataArray containing one dataarray
 										with coordinates specified by arrayargs and attributes 
 										specified by  constargs. The inner dimensions are named 
-										with the names specifyed in the variable innerdims
+										with the names specifyed in the variable innerdims (for txt data). 
 			"""
-			data = [np.loadtxt(self.folder+fname.strip('"')) for fname in self.arrayargsflat[fileargname] ]
-			datalist = np.array(data)
-			xrdata = xr.DataArray(np.array(data), dims=('pars', *innerdims), attrs=self.constargs)
-			#create a multiindex coordinate for the pars dimension:
+			try:
+				data = [np.loadtxt(self.folder+fname.strip('"')) for fname in self.arrayargsflat[fileargname] ]
+				xrdata = xr.DataArray(np.array(data), dims=('pars', *innerdims), attrs=self.constargs)
+			except:
+				data = [xr.open_dataset(self.folder+fname.strip('"')) for fname in self.arrayargsflat[fileargname] ]
+				xrdata = xr.concat(data, dim='pars')
 
+
+			#create a multiindex coordinate for the pars dimension:
 			parvaluesarray = [value for key, value in sorted(self.arrayargsflat.items())]
 			names = ([key for key in sorted(self.arrayargsflat.keys())])
 			#remove the rfname as name and value
