@@ -53,8 +53,8 @@ defaultusername = 'hornung'
 defaultclustername = 'itpwilson'
 # all files the job depends on 
 defaultdependencies = ['/scratch1/hornung/soworm/worm.so',
-				'/home/hornung/projects/soworm/pytools/simulator.py',
-				'/home/hornung/projects/soworm/pytools/wormwrap.py']
+                '/home/hornung/projects/soworm/pytools/simulator.py',
+                '/home/hornung/projects/soworm/pytools/wormwrap.py']
 
 # Templates - simulation program dependent 
 fileargname = "rfname"
@@ -74,217 +74,225 @@ python3 simulator.py {argstring}
 innerdims = ('i', 'observable_index')
 
 class Cluster(object):
-		"""	
-		Manages the communication to the cluster via ssh
+        """     
+        Manages the communication to the cluster via ssh
 
-		Args:
-			username (str):		The username to log in via ssh
-			clustername(str):	The name of the cluster to log in via ssh
-		
-		Attributes:
-			username (str):		The username to log in via ssh
-			clustername(str):	The name of the cluster to log in via ssh
+        Args:
+            username (str):         The username to log in via ssh
+            clustername(str):   The name of the cluster to log in via ssh
+        
+        Attributes:
+            username (str):         The username to log in via ssh
+            clustername(str):   The name of the cluster to log in via ssh
 
-		"""
-		def __init__(self, username=defaultusername, clustername=defaultclustername):
-				self.username = username
-				if clustername not in validclusternames:
-					print('Warning, invalid cluster name')
-				self.clustername = clustername
+        """
+        def __init__(self, username=defaultusername, clustername=defaultclustername):
+                self.username = username
+                if clustername not in validclusternames:
+                    print('Warning, invalid cluster name')
+                self.clustername = clustername
 
-		
-		def submit(self, jobscriptname):
-			""" Submits a job to the cluster, the job is executed from the
-				location where the jobscrit is.
+        
+        def submit(self, jobscriptname):
+            """ Submits a job to the cluster, the job is executed from the
+                location where the jobscrit is.
 
-			Args:
-				jobscriptname (str): The full path to the jobscript that is submitted to 
-										the cluster via qsub
-			"""
-			with paramiko.SSHClient() as client:
-					client.load_system_host_keys()
-					client.set_missing_host_key_policy(paramiko.WarningPolicy)
-    			# Establish SSH connection	
-					client.connect(self.clustername, username=self.username)
-					(path, fname) = os.path.split(jobscriptname)
-					stdin, stdout, stderror =client.exec_command("cd {};qsub {}".format(path,fname))
-					print(stderror)
-			return
+            Args:
+                jobscriptname (str): The full path to the jobscript that is submitted to 
+                                        the cluster via qsub
+            """
+            with paramiko.SSHClient() as client:
+                    client.load_system_host_keys()
+                    client.set_missing_host_key_policy(paramiko.WarningPolicy)
+                # Establish SSH connection  
+                    client.connect(self.clustername, username=self.username)
+                    (path, fname) = os.path.split(jobscriptname)
+                    stdin, stdout, stderror =client.exec_command("cd {};qsub {}".format(path,fname))
+                    print(stderror)
+            return
 
 
 
 class MatrixJob(object):
-		"""
-		The main Class in this module. 
+        """
+        The main Class in this module. 
 
-		Args:
-			name (str):			The Job name on the SGE
+        Args:
+            name (str):             The Job name on the SGE
 
-			folder (str): 		The folder the job files are generated in, assumed to
-								be on a device mounted on both, the cluster and the 
-								current machine.
+            localpath (str):        The local path to the folder the job files are generated in, assumed to
+                                be on a device mounted on both, the cluster and the 
+                                current machine.
 
-			arrayargs (dict):	A dictionary of the form {'parname': [parvalue1,parvalue2, ...], ...}
-								The job will start a simulation for all combinations of parameters
-								specified here.
+            remotepath (str):       The path on the Cluster to the folder the job files are generated in.
 
-			constargs (dict):   A dictionary of the form {'parname':parvalue ,...} 
-								All parameters specified here will be used by all simulations launched
-								by this job.
+            arrayargs (dict):   A dictionary of the form {'parname': [parvalue1,parvalue2, ...], ...}
+                                The job will start a simulation for all combinations of parameters
+                                specified here.
 
-			workingcluster (Cluster):  A cluster object, to manage communication with the cluster 
+            constargs (dict):   A dictionary of the form {'parname':parvalue ,...} 
+                                All parameters specified here will be used by all simulations launched
+                                by this job.
 
-			dependencies (list): A list of full paths to all files required by the simulation job,
-								including the main executable.
+            workingcluster (Cluster):  A cluster object, to manage communication with the cluster 
 
-		Attributes:
-			jobscriptname (str): The full path to the jobscript (submitted via qsub)
+            dependencies (list): A list of full paths to all files required by the simulation job,
+                                including the main executable.
 
-			resultfilenames(list): a list of strings containing the file names of all simulation results								
-			
-		"""
-		def __init__(self, 
-						folder ='',
-						name ='run',
-						arrayargs={},
-						constargs={},
-						workingcluster=Cluster(),
-						dependencies = defaultdependencies):
-			
-			self.workingcluster = workingcluster
-			self.folder = folder
-			self.name = name
-			self.arrayargs = arrayargs
-			self.constargs = constargs
-			self.dependencies = dependencies
+        Attributes:
+            jobscriptname (str): The full path to the jobscript (submitted via qsub)
 
-			# create flat lists over all combinations of arrayargs:
-			flatlists = list(zip(*it.product(*self.arrayargs.values())))
-			self.ta=flatlists
-			#recombine the lists with their name to a dictionary
-			self.arrayargsflat = { parname:parvalues for parname, parvalues
-														in zip(arrayargs.keys(), flatlists) } 
-			# to create the resultfilenamelist: tranpose the flat arrayargs dict:
-			self.arrayargsflattr = [dict(zip(self.arrayargsflat.keys(), partuple))
-										for partuple in zip(*self.arrayargsflat.values())]
-			# concatenate to filenames and sort alphabetically to be reproducible
-			rfnames = ['"results/'+'-'.join(
-								[parname+'-'+str(parvalue)
-										for parname, parvalue in sorted(pardict.items())]
-														)	+ '.dat"' 
-																	for pardict in self.arrayargsflattr]
+            resultfilenames(list): a list of strings containing the file names of all simulation results                                
+            
+        """
+        def __init__(self, 
+                   folder='',
+                   localpath ='',
+                   remotepath ='',
+                   name ='run',
+                   arrayargs={},
+                   constargs={},
+                   workingcluster=Cluster(),
+                   dependencies = defaultdependencies):
+            self.workingcluster = workingcluster
+            self.localpath =localpath 
+            self.remotepath =remotepath 
+            self.name = name
+            self.arrayargs = arrayargs
+            self.constargs = constargs
+            self.dependencies = dependencies
+            #if folder is specified instead of local and remote path, set both to folder. (for backwards compatibility)
+            if not folder == '':
+                            self.localpath=folder
+                            self.remotepath=folder
+            # create flat lists over all combinations of arrayargs:
+            flatlists = list(zip(*it.product(*self.arrayargs.values())))
+            self.ta=flatlists
+            #recombine the lists with their name to a dictionary
+            self.arrayargsflat = { parname:parvalues for parname, parvalues
+                                                        in zip(arrayargs.keys(), flatlists) } 
+            # to create the resultfilenamelist: tranpose the flat arrayargs dict:
+            self.arrayargsflattr = [dict(zip(self.arrayargsflat.keys(), partuple))
+                                        for partuple in zip(*self.arrayargsflat.values())]
+            # concatenate to filenames and sort alphabetically to be reproducible
+            rfnames = ['"results/'+'-'.join(
+                                [parname+'-'+str(parvalue)
+                                        for parname, parvalue in sorted(pardict.items())]
+                                                        )   + '.dat"' 
+                                                                    for pardict in self.arrayargsflattr]
 
-			self.jobscriptname = self.folder + self.name + '.sh'
-			self.arrayargsflat[fileargname]=rfnames		
-			return
-				
-			
-		def run(self):
-			""" Launches the job via ssh """
-			self.workingcluster.submit(self.jobscriptname)
-			return
+            self.localjobscriptname = self.localpath + self.name + '.sh'
+            self.remotejobscriptname = self.remotepath + self.name + '.sh'
+            self.arrayargsflat[fileargname]=rfnames         
+            return
+                
+            
+        def run(self):
+            """ Launches the job via ssh """
+            self.workingcluster.submit(self.remotejobscriptname)
+            return
 
-		def create_all_files(self):
-			""" Creates the jobfile, jobdirectory and subdirectories if necessary and copys all other
-				files, that a job debends on.
-			"""
-			for f in [self.folder, self.folder+"err/", self.folder+"out/", self.folder+"results/"]:
-				os.makedirs(f, exist_ok = True)
-	
-			for dep in self.dependencies:
-				os.system("cp "+dep+" "+self.folder)
+        def create_all_files(self):
+            """ Creates the jobfile, jobdirectory and subdirectories if necessary and copys all other
+                files, that a job debends on.
+            """
+            for f in [self.localpath, self.localpath+"err/", self.localpath+"out/", self.localpath+"results/"]:
+                os.makedirs(f, exist_ok = True)
+    
+            for dep in self.dependencies:
+                os.system("cp "+dep+" "+self.localpath)
 
-			self.create_launch_file()
-			
-			return
+            self.create_launch_file()
+            
+            return
 
-		def create_launch_file(self):
-			""" Creates the launch file to be submitted to SGE
-				uses the global string launchfiletemplate as a basis
-			"""
-			# create a string of the form
-			#"""
-			# arg1 = (0 a1v1 a1v2 a1v3 )
-			# arg2 = (0 a2v1 a2v2)
-			# ...
-			# """ 
-			# out of the arrayargsflat dict {'arg1':[a1v1,a1v2, a1v3], 'arg2':[a2v1,a2v2], ...}
-			argdefstring = "\n".join(
-						[("{}=(0 "+ ("{} "*len(parvalues)) +")").format(parname,*parvalues)  
-									for parname,parvalues in self.arrayargsflat.items()])
-			
-			# create the string
-			#  -arg1 ${arg1[${SGE_TASK_ID}] }
-			arrayargstring = " ".join([" -{} ${{{}[${{SGE_TASK_ID}}]}}".format(key, key)
-							  							for key in self.arrayargsflat.keys()])
-			constargstring = " ".join( ["-{} {} ".format(name,value) 
-													for name, value in self.constargs.items() ])
+        def create_launch_file(self):
+            """ Creates the launch file to be submitted to SGE
+                uses the global string launchfiletemplate as a basis
+            """
+            # create a string of the form
+            #"""
+            # arg1 = (0 a1v1 a1v2 a1v3 )
+            # arg2 = (0 a2v1 a2v2)
+            # ...
+            # """ 
+            # out of the arrayargsflat dict {'arg1':[a1v1,a1v2, a1v3], 'arg2':[a2v1,a2v2], ...}
+            argdefstring = "\n".join(
+                        [("{}=(0 "+ ("{} "*len(parvalues)) +")").format(parname,*parvalues)  
+                                    for parname,parvalues in self.arrayargsflat.items()])
+            
+            # create the string
+            #  -arg1 ${arg1[${SGE_TASK_ID}] }
+            arrayargstring = " ".join([" -{} ${{{}[${{SGE_TASK_ID}}]}}".format(key, key)
+                                                        for key in self.arrayargsflat.keys()])
+            constargstring = " ".join( ["-{} {} ".format(name,value) 
+                                                    for name, value in self.constargs.items() ])
 
-			launchfilecontent = launchfiletemplate.format(
-									# the plus one is needed because bash array indexing starts with
-									# 0 and the SGE_TASk_ID always starts with 1
-									nmax = len(next(iter(self.arrayargsflat.values())))+1,
-									argdefstring =  argdefstring,
-									argstring = constargstring + arrayargstring
-										)
-			with open(self.jobscriptname, "w") as f:
-					f.write(launchfilecontent)
-					f.close()
-			return 
+            launchfilecontent = launchfiletemplate.format(
+                                    # the plus one is needed because bash array indexing starts with
+                                    # 0 and the SGE_TASk_ID always starts with 1
+                                    nmax = len(next(iter(self.arrayargsflat.values())))+1,
+                                    argdefstring =  argdefstring,
+                                    argstring = constargstring + arrayargstring
+                                        )
+            with open(self.localjobscriptname, "w") as f:
+                    f.write(launchfilecontent)
+                    f.close()
+            return 
 
-				
-		def retrieve_data(self):
-			""" returns the data generated by the matrix job, combined into an xarray
+                
+        def retrieve_data(self):
+            """ returns the data generated by the matrix job, combined into an xarray
 
-			
-				Returns:
-					data (DataArray): 	an xarray.DataArray containing one dataarray
-										with coordinates specified by arrayargs and attributes 
-										specified by  constargs. The inner dimensions are named 
-										with the names specifyed in the variable innerdims (for txt data). 
-			"""
-					
-			try:
-				data = [np.loadtxt(self.folder+fname.strip('"')) 
-								for fname in self.arrayargsflat[fileargname] ]
-				xrdata = xr.DataArray(np.array(data), dims=('pars', *innerdims), attrs=self.constargs)
-			except:
-				data = [xr.open_dataset(self.folder+fname.strip('"')) 
-								for fname in self.arrayargsflat[fileargname] ]
-				xrdata = xr.concat(data, dim='pars')
+            
+                Returns:
+                    data (DataArray):   an xarray.DataArray containing one dataarray
+                                        with coordinates specified by arrayargs and attributes 
+                                        specified by  constargs. The inner dimensions are named 
+                                        with the names specifyed in the variable innerdims (for txt data). 
+            """
+                    
+            try:
+                data = [np.loadtxt(self.localpath+fname.strip('"')) 
+                                for fname in self.arrayargsflat[fileargname] ]
+                xrdata = xr.DataArray(np.array(data), dims=('pars', *innerdims), attrs=self.constargs)
+            except:
+                data = [xr.open_dataset(self.localpath+fname.strip('"')) 
+                                for fname in self.arrayargsflat[fileargname] ]
+                xrdata = xr.concat(data, dim='pars')
 
-			#create a multiindex coordinate for the pars dimension:
-			parvaluesarray = [value for key, value in sorted(self.arrayargsflat.items())]
-			names = ([key for key in sorted(self.arrayargsflat.keys())])
-			#remove the rfname as name and value
-			parvaluesarray.pop(names.index(fileargname))
-			names.remove(fileargname)
-			mi = MultiIndex.from_arrays(parvaluesarray,	names=names)
-			xrdata.coords['pars']=mi
-			return xrdata.unstack('pars')
+            #create a multiindex coordinate for the pars dimension:
+            parvaluesarray = [value for key, value in sorted(self.arrayargsflat.items())]
+            names = ([key for key in sorted(self.arrayargsflat.keys())])
+            #remove the rfname as name and value
+            parvaluesarray.pop(names.index(fileargname))
+            names.remove(fileargname)
+            mi = MultiIndex.from_arrays(parvaluesarray,     names=names)
+            xrdata.coords['pars']=mi
+            return xrdata.unstack('pars')
 
 
-		def retrieve_xrdata_ignore_missing(self):
-			def try_load_data_xr(name):
-					try:
-						 data = xr.open_dataset(name)
-						 return data
-					except:
-						 print('Ignoreing {} (was not found)'.format(name))
-						 return None
-			#loop over
-			datalist=[]
-			for i in range(len(self.arrayargsflat['rfname'])):
-				fname = self.arrayargsflat['rfname'][i]
-				ds = try_load_data_xr(self.folder+fname.strip('"'))
-				if not ds is None:
-				#add dimensions for all arrayarg parameters:
-					parnames = ([key for key in sorted(self.arrayargsflat.keys())])
-					parnames.remove(fileargname)
-					dsexpanded=ds.expand_dims(parnames)
-					# add the coordinates
-					for parname in parnames:
-							dsexpanded.coords[parname] = [ self.arrayargsflat[parname][i] ]
-					datalist.append(dsexpanded)
-			return xr.merge(datalist)
-			
+        def retrieve_xrdata_ignore_missing(self):
+            def try_load_data_xr(name):
+                    try:
+                         data = xr.open_dataset(name)
+                         return data
+                    except:
+                         print('Ignoreing {} (was not found)'.format(name))
+                         return None
+            #loop over
+            datalist=[]
+            for i in range(len(self.arrayargsflat['rfname'])):
+                fname = self.arrayargsflat['rfname'][i]
+                ds = try_load_data_xr(self.localpath+fname.strip('"'))
+                if not ds is None:
+                #add dimensions for all arrayarg parameters:
+                    parnames = ([key for key in sorted(self.arrayargsflat.keys())])
+                    parnames.remove(fileargname)
+                    dsexpanded=ds.expand_dims(parnames)
+                    # add the coordinates
+                    for parname in parnames:
+                            dsexpanded.coords[parname] = [ self.arrayargsflat[parname][i] ]
+                    datalist.append(dsexpanded)
+            return xr.merge(datalist)
+            
