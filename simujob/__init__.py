@@ -1,5 +1,2 @@
-import simujob
-from simujob import *
+from simujob.simujob import *
 
-def x(a):
- return a+1
