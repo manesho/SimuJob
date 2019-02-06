@@ -57,10 +57,10 @@ defaultdependencies = ['/scratch1/hornung/soworm/worm.so',
                 '/home/hornung/projects/soworm/pytools/wormwrap.py']
 
 # Templates - simulation program dependent 
-fileargname = "rfname"
+defaultfileargname = "rfname"
 # adjust this to you're need...
 # {argdefstring}, {argstring} and {nmax} will be replaced
-launchfiletemplate = """#!/bin/bash
+defaultlaunchfiletemplate = """#!/bin/bash
 #$-S /bin/sh
 #$-cwd
 #$-j yes
@@ -153,7 +153,10 @@ class MatrixJob(object):
                    arrayargs={},
                    constargs={},
                    workingcluster=Cluster(),
-                   dependencies = defaultdependencies):
+                     dependencies = defaultdependencies,
+                     launchfiletemplate = defaultlaunchfiletemplate,
+                     fileargname = defaultfileargname
+        ):
             self.workingcluster = workingcluster
             self.localpath =localpath 
             self.remotepath =remotepath 
@@ -166,6 +169,9 @@ class MatrixJob(object):
                             self.localpath=folder
                             self.remotepath=folder
             # create flat lists over all combinations of arrayargs:
+            self.launchfiletemplate = launchfiletemplate
+            self.fileargname = fileargname
+            
             flatlists = list(zip(*it.product(*self.arrayargs.values())))
             self.ta=flatlists
             #recombine the lists with their name to a dictionary
@@ -183,7 +189,7 @@ class MatrixJob(object):
 
             self.localjobscriptname = self.localpath + self.name + '.sh'
             self.remotejobscriptname = self.remotepath + self.name + '.sh'
-            self.arrayargsflat[fileargname]=rfnames         
+            self.arrayargsflat[self.fileargname]=rfnames         
             return
                 
             
@@ -228,7 +234,7 @@ class MatrixJob(object):
             constargstring = " ".join( ["-{} {} ".format(name,value) 
                                                     for name, value in self.constargs.items() ])
 
-            launchfilecontent = launchfiletemplate.format(
+            launchfilecontent = self.launchfiletemplate.format(
                                     # the plus one is needed because bash array indexing starts with
                                     # 0 and the SGE_TASk_ID always starts with 1
                                     nmax = len(next(iter(self.arrayargsflat.values())))+1,
@@ -254,19 +260,19 @@ class MatrixJob(object):
                     
             try:
                 data = [np.loadtxt(self.localpath+fname.strip('"')) 
-                                for fname in self.arrayargsflat[fileargname] ]
+                                for fname in self.arrayargsflat[self.fileargname] ]
                 xrdata = xr.DataArray(np.array(data), dims=('pars', *innerdims), attrs=self.constargs)
             except:
                 data = [xr.open_dataset(self.localpath+fname.strip('"')) 
-                                for fname in self.arrayargsflat[fileargname] ]
+                                for fname in self.arrayargsflat[self.fileargname] ]
                 xrdata = xr.concat(data, dim='pars')
 
             #create a multiindex coordinate for the pars dimension:
             parvaluesarray = [value for key, value in sorted(self.arrayargsflat.items())]
             names = ([key for key in sorted(self.arrayargsflat.keys())])
             #remove the rfname as name and value
-            parvaluesarray.pop(names.index(fileargname))
-            names.remove(fileargname)
+            parvaluesarray.pop(names.index(self.fileargname))
+            names.remove(self.fileargname)
             mi = MultiIndex.from_arrays(parvaluesarray,     names=names)
             xrdata.coords['pars']=mi
             return xrdata.unstack('pars')
@@ -288,7 +294,7 @@ class MatrixJob(object):
                 if not ds is None:
                 #add dimensions for all arrayarg parameters:
                     parnames = ([key for key in sorted(self.arrayargsflat.keys())])
-                    parnames.remove(fileargname)
+                    parnames.remove(self.fileargname)
                     dsexpanded=ds.expand_dims(parnames)
                     # add the coordinates
                     for parname in parnames:
