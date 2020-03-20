@@ -7,7 +7,7 @@ setup(name='simujob',
       author='Manes Hornung',
       author_email='manes.hornung@gmail.com',
       packages=['simujob'],
-      install_requires=[
+      install_requies=[
           'paramiko','xarray','numpy','pandas'
       ],
       zip_safe=False)
