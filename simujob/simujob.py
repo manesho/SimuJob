@@ -152,17 +152,20 @@ class MatrixJob(object):
                    remotepath ='',
                    name ='run',
                    arrayargs={},
+                   zipargs={},
                    constargs={},
                    workingcluster=Cluster(),
                      dependencies = defaultdependencies,
                      launchfiletemplate = defaultlaunchfiletemplate,
                      fileargname = defaultfileargname
         ):
+        
             self.workingcluster = workingcluster
             self.localpath =localpath 
             self.remotepath =remotepath 
             self.name = name
             self.arrayargs = arrayargs
+            self.zipargs = zipargs 
             self.constargs = constargs
             self.dependencies = dependencies
             #if folder is specified instead of local and remote path, set both to folder. (for backwards compatibility)
@@ -172,12 +175,22 @@ class MatrixJob(object):
             # create flat lists over all combinations of arrayargs:
             self.launchfiletemplate = launchfiletemplate
             self.fileargname = fileargname
-            
+
             flatlists = list(zip(*it.product(*self.arrayargs.values())))
-            self.ta=flatlists
+
+            self.parvalues=flatlists
+
+            if not zipargs == {}:
+                    l=list(self.arrayargs.values()) +[list(zip(*self.zipargs.values()))]
+                    l2 =list(it.product(*l))
+                    l3=[ l[:-1]+l[-1] for l in l2 ]
+                    self.parvalues = list(zip ( * l3))
+
+            parnames = list(self.arrayargs.keys())+list(self.zipargs.keys())
+        
+
             #recombine the lists with their name to a dictionary
-            self.arrayargsflat = { parname:parvalues for parname, parvalues
-                                                        in zip(arrayargs.keys(), flatlists) } 
+                self.arrayargsflat = { parname:parval for parname, parval in zip(parnames, self.parvalues) } 
             # to create the resultfilenamelist: tranpose the flat arrayargs dict:
             self.arrayargsflattr = [dict(zip(self.arrayargsflat.keys(), partuple))
                                         for partuple in zip(*self.arrayargsflat.values())]
@@ -199,6 +212,12 @@ class MatrixJob(object):
             self.workingcluster.submit(self.remotejobscriptname)
             return
 
+        def rsync_here2there(self, sshremote='hornung@itpgate1.unibe.ch'):
+            subprocess.call(['rsync', '-av',lpath ,sshremote+':'+rpath])
+ 
+        def rsync_here2there(self, sshremote='hornung@itpgate1.unibe.ch'):
+            subprocess.call(['rsync', '-av', sshremote+':'+rpath,lpath ])
+
         def create_all_files(self):
             """ Creates the jobfile, jobdirectory and subdirectories if necessary and copys all other
                 files, that a job debends on.
@@ -213,7 +232,7 @@ class MatrixJob(object):
             
             return
 
-        def create_launch_file(self):
+        def create_launch_file_content(self):
             """ Creates the launch file to be submitted to SGE
                 uses the global string launchfiletemplate as a basis
             """
@@ -242,10 +261,16 @@ class MatrixJob(object):
                                     argdefstring =  argdefstring,
                                     argstring = constargstring + arrayargstring
                                         )
+
+            return launchfilecontent
+
+        def create_launch_file(self):
+            launchfilecontent = self.create_launch_file_content()
             with open(self.localjobscriptname, "w") as f:
                     f.write(launchfilecontent)
                     f.close()
             return 
+
 
     
         def retrieve_data(self):
@@ -286,14 +311,21 @@ class MatrixJob(object):
                     if not  path.exists(f):
                             print('ignoreing '+f)
 
+
             data = [xr.open_dataset(f) for f in allfiles if path.exists(f) ]
-            xrdata = xr.concat(data, dim='pars')
+
             parvaluesarray = [[v for v,f in zip(value, allfiles) if path.exists(f) ] for key, value in sorted(self.arrayargsflat.items())]
             names = ([key for key in sorted(self.arrayargsflat.keys())])
             #remove the rfname as name and value
             parvaluesarray.pop(names.index(self.fileargname))
             names.remove(self.fileargname)
             mi = MultiIndex.from_arrays(parvaluesarray, names=names)
+            
+            try:
+                    xrdata = xr.concat(data, dim='pars')
+                    
+            except:
+                    return data,mi
             xrdata.coords['pars']=mi
             return xrdata.unstack('pars')
 
