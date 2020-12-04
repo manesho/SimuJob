@@ -19,10 +19,10 @@ What it can do:
 
 Installation
 ============
-For instance via pip from github as::
+
+For instance via pip from github as
+::
     $ pip install git+https://github.com/manesho/SimuJob.git 
-
-
 
 
 Usage
