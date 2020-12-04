@@ -19,8 +19,8 @@ What it can do:
 
 Installation
 ============
-::
-	$ pip install git+https://github.com/manesho/SimuJob.git 
+For instance via pip from github as::
+    $ pip install git+https://github.com/manesho/SimuJob.git 
 
 
 
