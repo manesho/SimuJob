@@ -39,6 +39,7 @@ For more complicated output data, with an arbitrary number of dimensions, use ne
 import itertools as it
 import os
 from os import path
+import subprocess
 import paramiko
 import xarray as xr
 import numpy as np
@@ -154,6 +155,7 @@ class MatrixJob(object):
                    arrayargs={},
                    zipargs={},
                    constargs={},
+        task_id_str='SGE_TASK_ID',
                    workingcluster=Cluster(),
                      dependencies = defaultdependencies,
                      launchfiletemplate = defaultlaunchfiletemplate,
@@ -161,6 +163,7 @@ class MatrixJob(object):
         ):
         
             self.workingcluster = workingcluster
+            self.task_id_str= task_id_str
             self.localpath =localpath 
             self.remotepath =remotepath 
             self.name = name
@@ -177,7 +180,6 @@ class MatrixJob(object):
             self.fileargname = fileargname
 
             flatlists = list(zip(*it.product(*self.arrayargs.values())))
-
             self.parvalues=flatlists
 
             if not zipargs == {}:
@@ -190,7 +192,7 @@ class MatrixJob(object):
         
 
             #recombine the lists with their name to a dictionary
-                self.arrayargsflat = { parname:parval for parname, parval in zip(parnames, self.parvalues) } 
+            self.arrayargsflat = { parname:parval for parname, parval in zip(parnames, self.parvalues) } 
             # to create the resultfilenamelist: tranpose the flat arrayargs dict:
             self.arrayargsflattr = [dict(zip(self.arrayargsflat.keys(), partuple))
                                         for partuple in zip(*self.arrayargsflat.values())]
@@ -213,10 +215,10 @@ class MatrixJob(object):
             return
 
         def rsync_here2there(self, sshremote='hornung@itpgate1.unibe.ch'):
-            subprocess.call(['rsync', '-av',lpath ,sshremote+':'+rpath])
+                subprocess.call(['rsync', '-av',self.localpath ,sshremote+':'+self.remotepath])
  
-        def rsync_here2there(self, sshremote='hornung@itpgate1.unibe.ch'):
-            subprocess.call(['rsync', '-av', sshremote+':'+rpath,lpath ])
+        def rsync_there2here(self, sshremote='hornung@itpgate1.unibe.ch'):
+                subprocess.call(['rsync', '-av', sshremote+':'+self.remotepath,self.localpath])
 
         def create_all_files(self):
             """ Creates the jobfile, jobdirectory and subdirectories if necessary and copys all other
@@ -249,7 +251,7 @@ class MatrixJob(object):
             
             # create the string
             #  -arg1 ${arg1[${SGE_TASK_ID}] }
-            arrayargstring = " ".join([" -{} ${{{}[${{SGE_TASK_ID}}]}}".format(key, key)
+            arrayargstring = " ".join([" -{} ${{{}[${{{}}}]}}".format(key, key, self.task_id_str)
                                                         for key in self.arrayargsflat.keys()])
             constargstring = " ".join( ["-{} {} ".format(name,value) 
                                                     for name, value in self.constargs.items() ])
@@ -304,12 +306,13 @@ class MatrixJob(object):
             return xrdata.unstack('pars')
 
 
-        def retrieve_xrdata_ignore_missing(self):
+        def retrieve_xrdata_ignore_missing(self, verbose=False):
             allfiles = [(self.localpath+fname.strip('"'))
                         for fname in self.arrayargsflat[self.fileargname] ]
-            for f in allfiles:
-                    if not  path.exists(f):
-                            print('ignoreing '+f)
+            if verbose:
+                    for f in allfiles:
+                            if not  path.exists(f):
+                                    print('ignoreing '+f)
 
 
             data = [xr.open_dataset(f) for f in allfiles if path.exists(f) ]
@@ -321,13 +324,13 @@ class MatrixJob(object):
             names.remove(self.fileargname)
             mi = MultiIndex.from_arrays(parvaluesarray, names=names)
             
-            try:
-                    xrdata = xr.concat(data, dim='pars')
-                    
-            except:
-                    return data,mi
-            xrdata.coords['pars']=mi
-            return xrdata.unstack('pars')
+#            try:
+#                    xrdata = xr.concat(data, dim='pars')
+#                    
+#            except:
+#                    return data,mi
+#            xrdata.coords['pars']=mi
+            return data, mi 
 
 
-           
+
