@@ -1,7 +1,7 @@
 """
 SimuJob Module
 
-A tool to create and launch Matrix/array jobs and retrieve data on a SGE cluster.
+A tool to create and launch Matrix/array jobs and retrieve data on a SGE eluster.
 
 The class MatrixJob can be used to generate job launch files, submite them to the 
 cluster and retrieve the resulting data as a convenient xarray DataArray.
@@ -12,18 +12,29 @@ As an example, for arrayargs={'a':[1,2], 'b':[3,4]} and constargs={'c':1, 'd':2}
 launchfile template
 
 ''
-#$-t 1-{nmax}
+#!/bin/bash
+#SBATCH --mail-type=NONE
+#SBATCH --time=24:00:00     
+#SBATCH --array=1-{nmax} 
+#SBATCH -e err/%A_%a.err
+#SBATCH -o out/%A_%a.out
+
 {argdefstring}
-foo {argstring}
+runmyprogram {argstring}
 ''
 
 will be expanded to
 ''
-#$-t 1-5
+#!/bin/bash
+#SBATCH --mail-type=NONE
+#SBATCH --array=1-5
+#SBATCH -e err/%A_%a.err
+#SBATCH -o out/%A_%a.out
+
 a=(0 1 2 1 2)
 b=(0 3 3 4 4)
 rfname = (0 "results/a-1-b-3" "results/a-2-b-3" "results/a-1-b-4" "results/a-2-b-4")
-foo -a ${a[${SGE_TASK_ID}]} -b ${b[${SGE_TASK_ID}]} -rfname ${rfname[${SGE_TASK_ID}]} -c 1 -d 2
+runmyprogram -a ${a[${SGE_TASK_ID}]} -b ${b[${SGE_TASK_ID}]} -rfname ${rfname[${SGE_TASK_ID}]} -c 1 -d 2
 ''
 
 note the additional argument rfname, that has not been specified. In order for this script together with
@@ -32,7 +43,7 @@ its results to a file whose name can be specified with an argument.
 The name of that argument can be specified in the variable fileargname.
 This file can either be a plain csv file (one that can be read by numpy.loadtxt) or a netcdf file.
 In the case of csv files, the inner dimension neames need to be specified by the variable innerdims.
-For more complicated output data, with an arbitrary number of dimensions, use netcdf files.
+For more complicated output data, with an arbitrary number of dimensions, use netcdf files, that can be opened with xarray.open_dataset
 
 """
 
@@ -40,7 +51,6 @@ import itertools as it
 import os
 from os import path
 import subprocess
-import paramiko
 import xarray as xr
 import numpy as np
 from pandas import MultiIndex
@@ -48,18 +58,8 @@ from pandas import MultiIndex
 #####################################
 # System dependent default settings
 ####################################
-validclusternames = ['itpwilson', 'neumann']
-# used for the ssh connection:
-defaultusername = 'hornung'
-defaultclustername = 'itpwilson'
 # all files the job depends on 
-defaultdependencies = ['/scratch1/hornung/soworm/worm.so',
-                '/home/hornung/projects/soworm/pytools/simulator.py',
-                '/home/hornung/projects/soworm/pytools/wormwrap.py']
 
-# Templates - simulation program dependent 
-defaultfileargname = "rfname"
-# adjust this to you're need...
 # {argdefstring}, {argstring} and {nmax} will be replaced
 defaultlaunchfiletemplate = """#!/bin/bash
 #$-S /bin/sh
@@ -74,45 +74,6 @@ python3 simulator.py {argstring}
 # make sure that this matches! 
 innerdims = ('i', 'observable_index')
 
-class Cluster(object):
-        """     
-        Manages the communication to the cluster via ssh
-
-        Args:
-            username (str):         The username to log in via ssh
-            clustername(str):   The name of the cluster to log in via ssh
-
-        Attributes:
-            username (str):         The username to log in via ssh
-            clustername(str):   The name of the cluster to log in via ssh
-
-        """
-        def __init__(self, username=defaultusername, clustername=defaultclustername):
-                self.username = username
-                if clustername not in validclusternames:
-                    print('Warning, invalid cluster name')
-                self.clustername = clustername
-
-        
-        def submit(self, jobscriptname):
-            """ Submits a job to the cluster, the job is executed from the
-                location where the jobscrit is.
-
-            Args:
-                jobscriptname (str): The full path to the jobscript that is submitted to 
-                                        the cluster via qsub
-            """
-            with paramiko.SSHClient() as client:
-                    client.load_system_host_keys()
-                    client.set_missing_host_key_policy(paramiko.WarningPolicy)
-                # Establish SSH connection  
-                    client.connect(self.clustername, username=self.username)
-                    (path, fname) = os.path.split(jobscriptname)
-                    stdin, stdout, stderror =client.exec_command("cd {};qsub {}".format(path,fname))
-                    print(stdout, stderror)
-                    print(stderror)
-            return
-
 
 
 class MatrixJob(object):
@@ -121,6 +82,9 @@ class MatrixJob(object):
 
         Args:
             name (str):             The Job name on the SGE
+
+
+            sshremote(str):    The user and host address of the cluster, e.g. user@cluster.ch such that one can login to the cluster with ssh sshremote.
 
             localpath (str):        The local path to the folder the job files are generated in, assumed to
                                 be on a device mounted on both, the cluster and the 
@@ -132,11 +96,13 @@ class MatrixJob(object):
                                 The job will start a simulation for all combinations of parameters
                                 specified here.
 
+            zipargs (dict):      A dictionary of the form {'parnameA':parvaluesA, 'parnameB':parvaluesB ...}
+                                Where len(parvaluesA) = len(parvaluesB). These parameters will be treated as one parameter in arrayargs.
+
             constargs (dict):   A dictionary of the form {'parname':parvalue ,...} 
                                 All parameters specified here will be used by all simulations launched
                                 by this job.
 
-            workingcluster (Cluster):  A cluster object, to manage communication with the cluster 
 
             dependencies (list): A list of full paths to all files required by the simulation job,
                                 including the main executable.
@@ -148,21 +114,30 @@ class MatrixJob(object):
             
         """
         def __init__(self, 
-                   folder='',
-                   localpath ='',
-                   remotepath ='',
-                   name ='run',
-                   arrayargs={},
-                   zipargs={},
-                   constargs={},
-        task_id_str='SGE_TASK_ID',
-                   workingcluster=Cluster(),
-                     dependencies = defaultdependencies,
-                     launchfiletemplate = defaultlaunchfiletemplate,
-                     fileargname = defaultfileargname
+                     folder='',
+                     localpath ='',
+                     remotepath ='',
+                     sshremote='user@cluster.ch',
+                     name ='a_short_but_descriptive_jobname',
+                     arrayargs={},
+                     zipargs={},
+                     constargs={},
+                     task_id_str='SLURM_ARRAY_TASK_ID',
+                     dependencies = [],
+                     launchfiletemplate = """
+#!/bin/bash
+#SBATCH --mail-type=NONE
+#SBATCH --array=1-{nmax}
+#SBATCH -e err/%A_%a.err
+#SBATCH -o out/%A_%a.out
+
+{argdefstring}
+runmyprogram {argstring}
+""",
+                     fileargname = 'rfname' 
         ):
         
-            self.workingcluster = workingcluster
+            self.sshremote=sshremote
             self.task_id_str= task_id_str
             self.localpath =localpath 
             self.remotepath =remotepath 
@@ -209,16 +184,48 @@ class MatrixJob(object):
             return
                 
             
-        def run(self):
-            """ Launches the job via ssh """
-            self.workingcluster.submit(self.remotejobscriptname)
-            return
 
-        def rsync_here2there(self, sshremote='hornung@itpgate1.unibe.ch'):
-                subprocess.call(['rsync', '-av',self.localpath ,sshremote+':'+self.remotepath])
+        def rsync_here2there(self):
+                subprocess.call(['rsync', '-av',self.localpath ,self.sshremote+':'+self.remotepath])
  
-        def rsync_there2here(self, sshremote='hornung@itpgate1.unibe.ch'):
-                subprocess.call(['rsync', '-av', sshremote+':'+self.remotepath,self.localpath])
+        def rsync_there2here(self):
+                subprocess.call(['rsync', '-av', self.sshremote+':'+self.remotepath,self.localpath])
+
+        def submit(self, submissioncmd='sbatch', extracmds=''):
+                path, fname = os.path.split(self.remotejobscriptname)
+                stdout = subprocess.check_output(
+                        ['ssh',self.sshremote, 'source ~/.bash_profile; cd {}; {} {} {}'.format(
+                                path, extracmds,submissioncmd, fname
+                        )])
+
+                self.jobid=int(stdout.split()[-1])
+                print(stdout)
+
+        def get_status(self, byname= False):
+                jobidentifier = self.name if byname else self.jobid
+                stdout = subprocess.check_output(
+                        ['ssh',self.sshremote, 'squeue | grep {} | wc -l'.format(
+                                jobidentifier
+                        )])
+                print("{} out of {} jobs still running".format(
+                        0 if int(stdout) ==0 else int(stdout)-1,
+                        len(self.parvalues[0])))
+
+        def delete_errors(self):
+                subprocess.check_output(['ssh', self.sshremote, 'rm {}err/*.err'.format(self.remotepath)])
+
+        def print_errors(self):
+                stdout = subprocess.check_output(['ssh', self.sshremote, 'cat {}err/*.err'.format(self.remotepath)])
+                print(str(stdout).replace('\\n', '\n'))
+        def delete_stdout(self):
+                subprocess.check_output(['ssh', self.sshremote, 'rm {}out/*.out'.format(self.remotepath)])
+
+        def print_stdout(self):
+                stdout = subprocess.check_output(['ssh', self.sshremote, 'cat {}out/*.out'.format(self.remotepath)])
+                print(str(stdout).replace('\\n', '\n'))
+
+
+        
 
         def create_all_files(self):
             """ Creates the jobfile, jobdirectory and subdirectories if necessary and copys all other
