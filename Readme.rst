@@ -19,9 +19,9 @@ What it can do:
 
 Installation
 ============
-```console
+``
 $ pip install git+https://github.com/manesho/SimuJob.git 
-```
+``
 
 
 
@@ -29,12 +29,6 @@ Usage
 ============
 
 See example.ipynb
-
-Requirements
-============
-To use SimuJob as it is, you need:
-    
-- A SLURM cluster 
 
 
 
