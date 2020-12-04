@@ -186,6 +186,7 @@ runmyprogram {argstring}
             
 
         def rsync_here2there(self):
+                subprocess.call(['ssh', self.sshremote, 'mkdir -p {}'.format(self.remotepath)])
                 subprocess.call(['rsync', '-av',self.localpath ,self.sshremote+':'+self.remotepath])
  
         def rsync_there2here(self):
@@ -208,11 +209,12 @@ runmyprogram {argstring}
                                 jobidentifier
                         )])
                 print("{} out of {} jobs still running".format(
-                        0 if int(stdout) ==0 else int(stdout)-1,
+                        int(stdout),
                         len(self.parvalues[0])))
 
         def delete_errors(self):
                 subprocess.check_output(['ssh', self.sshremote, 'rm {}err/*.err'.format(self.remotepath)])
+                
 
         def print_errors(self):
                 stdout = subprocess.check_output(['ssh', self.sshremote, 'cat {}err/*.err'.format(self.remotepath)])
@@ -252,6 +254,7 @@ runmyprogram {argstring}
             # ...
             # """ 
             # out of the arrayargsflat dict {'arg1':[a1v1,a1v2, a1v3], 'arg2':[a2v1,a2v2], ...}
+            # the zero after the paranthesis is a hack: bash array indexing starts with zero, but sge_task_id with one
             argdefstring = "\n".join(
                         [("{}=(0 "+ ("{} "*len(parvalues)) +")").format(parname,*parvalues)  
                                     for parname,parvalues in self.arrayargsflat.items()])
@@ -264,9 +267,7 @@ runmyprogram {argstring}
                                                     for name, value in self.constargs.items() ])
 
             launchfilecontent = self.launchfiletemplate.format(
-                                    # the plus one is needed because bash array indexing starts with
-                                    # 0 and the SGE_TASk_ID always starts with 1
-                                    nmax = len(next(iter(self.arrayargsflat.values())))+1,
+                                    nmax = len(next(iter(self.arrayargsflat.values()))),
                                     argdefstring =  argdefstring,
                                     argstring = constargstring + arrayargstring
                                         )
